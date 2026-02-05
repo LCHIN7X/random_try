@@ -166,7 +166,7 @@ void check_last_player() {
         if (game->active[i]) { alive++; last = i; }
     }
     if (alive == 1) {
-        printf("\n🏆 PLAYER %d WINS THE GAME! 🏆\n", last);
+        printf("\n PLAYER %d WINS THE GAME! \n", last);
         log_msg("PLAYER %d WINS THE GAME\n", last);
 
         /* Update persistent score */
@@ -220,9 +220,10 @@ void handle_client(int pid, int sock) {
             continue;
         }
 
-        printf("\n➡️ PLAYER %d'S TURN\n", pid);
+        printf("\n PLAYER %d'S TURN\n", pid);
         log_msg("PLAYER %d TURN\n", pid);
 
+        send(sock, "\n[SERVER] Invalid move, please choose again.\n", 48, 0);
         build_menu(pid, menu);
         send(sock, menu, strlen(menu), 0);
         pthread_mutex_unlock(&game->game_mutex);
@@ -235,15 +236,15 @@ void handle_client(int pid, int sock) {
         pthread_mutex_lock(&game->game_mutex);
 
         if (strcmp(buf, "NO_CARD") == 0) {
-            printf("👉 Player %d clicked: NO_CARD\n", pid);
+            printf(" Player %d clicked: NO_CARD\n", pid);
             log_msg("PLAYER %d NO_CARD\n", pid);
             game->no_card_count[pid]++;
             game->hands[pid][game->hand_count[pid]++] = draw_card();
 
             if (game->no_card_count[pid] >= 3) {
-                printf("⚠️ Player %d DISQUALIFIED (3 NO_CARD)\n", pid);
+                printf(" Player %d DISQUALIFIED (3 NO_CARD)\n", pid);
                 game->active[pid] = 0;
-                send(sock, "\n🚫 YOU ARE DISQUALIFIED (3 NO_CARD)\n", 40, 0);
+                send(sock, "\n YOU ARE DISQUALIFIED (3 NO_CARD)\n", 40, 0);
                 close(sock);
                 game->current_turn = next_player(pid);
                 check_last_player();
@@ -256,17 +257,27 @@ void handle_client(int pid, int sock) {
         }
 
         int choice = atoi(buf) - 1;
-        if (choice < 0 || choice >= game->hand_count[pid] ||
-            !valid_move(game->hands[pid][choice], game->top_card)) {
-            build_menu(pid, menu);
-            send(sock, menu, strlen(menu), 0);
-            pthread_mutex_unlock(&game->game_mutex);
-            continue;
-        }
+
+    if (choice < 0 || choice >= game->hand_count[pid]) {
+        send(sock, "\n[SERVER] Invalid card number. Try again.\n", 44, 0);
+        pthread_mutex_unlock(&game->game_mutex);
+        continue;
+    }
+
+    Card selected = game->hands[pid][choice];
+
+    if (!valid_move(selected, game->top_card)) {
+        send(sock,
+            "\n[SERVER] Invalid move! Card does not match color/type/number.\n",
+            67, 0);
+        pthread_mutex_unlock(&game->game_mutex);
+        continue;
+    }
+
 
         Card played = game->hands[pid][choice];
         game->top_card = played;
-        printf("🎯 Player %d played: %s %s", pid, color_str(played.color), type_str(played.type));
+        printf(" Player %d played: %s %s", pid, color_str(played.color), type_str(played.type));
         if (played.type == NUMBER) printf(" %d", played.number);
         printf("\n");
         log_msg("PLAYER %d PLAYED\n", pid);
@@ -276,30 +287,30 @@ void handle_client(int pid, int sock) {
         game->hand_count[pid]--;
 
         if (game->hand_count[pid] == 0) {
-            printf("\n🏆 PLAYER %d WINS THE GAME! 🏆\n", pid);
-            send(sock, "YOU WIN 🎉\n", 11, 0);
+            printf("\n PLAYER %d WINS THE GAME! \n", pid);
+            send(sock, "YOU WIN \n", 11, 0);
             game->game_over = 1;
             pthread_mutex_unlock(&game->game_mutex);
             exit(0);
         }
 
         if (played.type == SKIP) {
-            printf("⏭️ SKIP played! Skipping next player.\n");
+            printf(" SKIP played! Skipping next player.\n");
             game->current_turn = next_player(next_player(pid));
         } else if (played.type == PLUS2) {
             int n2 = next_player(pid);
             game->hands[n2][game->hand_count[n2]++] = draw_card();
             game->hands[n2][game->hand_count[n2]++] = draw_card();
-            printf("➕ Player %d draws 2 cards\n", n2);
+            printf(" Player %d draws 2 cards\n", n2);
             game->current_turn = next_player(n2);
         } else {
             game->current_turn = next_player(pid);
         }
 
         if (game->hand_count[pid] >= MAX_HAND) {
-            printf("⚠️ Player %d DISQUALIFIED (8 CARDS)\n", pid);
+            printf(" Player %d DISQUALIFIED (8 CARDS)\n", pid);
             game->active[pid] = 0;
-            send(sock, "\n🚫 YOU ARE DISQUALIFIED (8 CARDS)\n", 40, 0);
+            send(sock, "\n YOU ARE DISQUALIFIED (8 CARDS)\n", 40, 0);
             close(sock);
             game->current_turn = next_player(pid);
             check_last_player();
@@ -366,6 +377,9 @@ int main() {
 
     load_scores();
 
+    printf("[SERVER] Server is running ");
+    fflush(stdout);
+
     printf("Enter number of players (3-5): ");
     scanf("%d", &game->players);
     if (game->players < 3 || game->players > 5) game->players = 3;
@@ -380,9 +394,11 @@ int main() {
         for (int j = 0; j < HAND_SIZE; j++)
             game->hands[i][j] = draw_card();
     }
-    game->top_card = draw_card();
+    do {
+        game->top_card = draw_card();
+    } while (game->top_card.type != NUMBER);
 
-    printf("\n🃏 INITIAL TOP CARD: %s %s", color_str(game->top_card.color), type_str(game->top_card.type));
+    printf("\n INITIAL TOP CARD: %s %s", color_str(game->top_card.color), type_str(game->top_card.type));
     if (game->top_card.type == NUMBER) printf(" %d", game->top_card.number);
     printf("\n");
 
@@ -397,6 +413,6 @@ int main() {
     }
 
     while (wait(NULL) > 0);
-    printf("\n🎮 GAME OVER 🎮\n");
+    printf("\nGAME OVER\n");
     return 0;
 }
