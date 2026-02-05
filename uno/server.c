@@ -223,6 +223,7 @@ void handle_client(int pid, int sock) {
         printf("\n PLAYER %d'S TURN\n", pid);
         log_msg("PLAYER %d TURN\n", pid);
 
+        send(sock, "\n[SERVER] Invalid move, please choose again.\n", 48, 0);
         build_menu(pid, menu);
         send(sock, menu, strlen(menu), 0);
         pthread_mutex_unlock(&game->game_mutex);
@@ -256,13 +257,23 @@ void handle_client(int pid, int sock) {
         }
 
         int choice = atoi(buf) - 1;
-        if (choice < 0 || choice >= game->hand_count[pid] ||
-            !valid_move(game->hands[pid][choice], game->top_card)) {
-            build_menu(pid, menu);
-            send(sock, menu, strlen(menu), 0);
-            pthread_mutex_unlock(&game->game_mutex);
-            continue;
-        }
+
+    if (choice < 0 || choice >= game->hand_count[pid]) {
+        send(sock, "\n[SERVER] Invalid card number. Try again.\n", 44, 0);
+        pthread_mutex_unlock(&game->game_mutex);
+        continue;
+    }
+
+    Card selected = game->hands[pid][choice];
+
+    if (!valid_move(selected, game->top_card)) {
+        send(sock,
+            "\n[SERVER] Invalid move! Card does not match color/type/number.\n",
+            67, 0);
+        pthread_mutex_unlock(&game->game_mutex);
+        continue;
+    }
+
 
         Card played = game->hands[pid][choice];
         game->top_card = played;
@@ -367,6 +378,7 @@ int main() {
     load_scores();
 
     printf("[SERVER] Server is running ");
+    fflush(stdout);
 
     printf("Enter number of players (3-5): ");
     scanf("%d", &game->players);
@@ -382,7 +394,9 @@ int main() {
         for (int j = 0; j < HAND_SIZE; j++)
             game->hands[i][j] = draw_card();
     }
-    game->top_card = draw_card();
+    do {
+        game->top_card = draw_card();
+    } while (game->top_card.type != NUMBER);
 
     printf("\n INITIAL TOP CARD: %s %s", color_str(game->top_card.color), type_str(game->top_card.type));
     if (game->top_card.type == NUMBER) printf(" %d", game->top_card.number);
