@@ -377,9 +377,6 @@ int main() {
 
     load_scores();
 
-    printf("[SERVER] Server is running ");
-    fflush(stdout);
-
     printf("Enter number of players (3-5): ");
     scanf("%d", &game->players);
     if (game->players < 3 || game->players > 5) game->players = 3;
