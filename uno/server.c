@@ -340,6 +340,27 @@ void load_scores() {
     fclose(f);
 }
 
+void reset_game_state() {
+    build_deck();
+    shuffle_deck();
+
+    for (int i = 0; i < game->players; i++) {
+        game->active[i] = 1;
+        game->no_card_count[i] = 0;
+        game->hand_count[i] = HAND_SIZE;
+        for (int j = 0; j < HAND_SIZE; j++)
+            game->hands[i][j] = draw_card();
+    }
+
+    do {
+        game->top_card = draw_card();
+    } while (game->top_card.type != NUMBER);
+
+    game->current_turn = 0;
+    game->game_over = 0;
+}
+
+
 /* ---------- MAIN ---------- */
 int main() {
     srand(time(NULL));
@@ -354,49 +375,78 @@ int main() {
     addr.sin_port = htons(PORT);
     addr.sin_addr.s_addr = INADDR_ANY;
 
-    if (bind(server_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) { perror("bind"); exit(1); }
-    if (listen(server_fd, 5) < 0) { perror("listen"); exit(1); }
+    if (bind(server_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        perror("bind"); exit(1);
+    }
+    if (listen(server_fd, 5) < 0) {
+        perror("listen"); exit(1);
+    }
 
-    game = mmap(NULL, sizeof(GameState), PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0);
+    /* Shared memory */
+    game = mmap(NULL, sizeof(GameState),
+                PROT_READ | PROT_WRITE,
+                MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+
     pthread_mutexattr_t attr;
     pthread_mutexattr_init(&attr);
     pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+
     pthread_mutex_init(&game->game_mutex, &attr);
     pthread_mutex_init(&game->score_mutex, &attr);
 
     load_scores();
 
-    printf("Enter number of players (3-5): ");
-    scanf("%d", &game->players);
-    if (game->players < 3 || game->players > 5) game->players = 3;
+    /* ================= GAME LOOP ================= */
+    while (1) {
 
-    build_deck();
-    shuffle_deck();
+        printf("\n [SERVER] START NEW GAME\n");
+        printf("Enter number of players (3-5): ");
+        scanf("%d", &game->players);
 
-    for (int i = 0; i < game->players; i++) {
-        game->active[i] = 1;
-        game->no_card_count[i] = 0;
-        game->hand_count[i] = HAND_SIZE;
-        for (int j = 0; j < HAND_SIZE; j++)
-            game->hands[i][j] = draw_card();
+        if (game->players < 3 || game->players > 5)
+            game->players = 3;
+
+        reset_game_state(); 
+        printf("\nINITIAL TOP CARD: %s %s",
+               color_str(game->top_card.color),
+               type_str(game->top_card.type));
+        if (game->top_card.type == NUMBER)
+            printf(" %d", game->top_card.number);
+        printf("\n");
+
+        pthread_t sched_t, log_t;
+        pthread_create(&sched_t, NULL, scheduler_thread, NULL);
+        pthread_create(&log_t, NULL, logger_thread, NULL);
+
+        /* Accept players */
+        for (int i = 0; i < game->players; i++) {
+            int c = accept(server_fd, NULL, NULL);
+            printf("[SERVER] Player %d connected\n", i);
+
+            pid_t pid = fork();
+            if (pid == 0) {
+                close(server_fd);   
+                handle_client(i, c);
+                exit(0);
+            }
+            close(c);  
+        }
+
+   
+        while (!game->game_over)
+            sleep(1);
+
+     
+        while (wait(NULL) > 0);
+
+        
+        pthread_cancel(sched_t);
+        pthread_cancel(log_t);
+        pthread_join(sched_t, NULL);
+        pthread_join(log_t, NULL);
+
+        printf("\n=== GAME OVER. READY FOR NEXT GAME ===\n");
     }
-    game->top_card = draw_card();
 
-    printf("\n INITIAL TOP CARD: %s %s", color_str(game->top_card.color), type_str(game->top_card.type));
-    if (game->top_card.type == NUMBER) printf(" %d", game->top_card.number);
-    printf("\n");
-
-    pthread_t sched_t, log_t;
-    pthread_create(&sched_t, NULL, scheduler_thread, NULL);
-    pthread_create(&log_t, NULL, logger_thread, NULL);
-
-    for (int i = 0; i < game->players; i++) {
-        int c = accept(server_fd, NULL, NULL);
-        printf("[SERVER] Player %d connected\n", i);
-        if (fork() == 0) handle_client(i, c);
-    }
-
-    while (wait(NULL) > 0);
-    printf("\n GAME OVER \n");
     return 0;
 }
