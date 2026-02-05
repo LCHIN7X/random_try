@@ -290,7 +290,7 @@ void handle_client(int pid, int sock) {
             int n2 = next_player(pid);
             game->hands[n2][game->hand_count[n2]++] = draw_card();
             game->hands[n2][game->hand_count[n2]++] = draw_card();
-            printf("➕ Player %d draws 2 cards\n", n2);
+            printf(" Player %d draws 2 cards\n", n2);
             game->current_turn = next_player(n2);
         } else {
             game->current_turn = next_player(pid);
