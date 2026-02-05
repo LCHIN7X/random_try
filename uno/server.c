@@ -382,7 +382,7 @@ int main() {
     }
     game->top_card = draw_card();
 
-    printf("\n🃏 INITIAL TOP CARD: %s %s", color_str(game->top_card.color), type_str(game->top_card.type));
+    printf("\n INITIAL TOP CARD: %s %s", color_str(game->top_card.color), type_str(game->top_card.type));
     if (game->top_card.type == NUMBER) printf(" %d", game->top_card.number);
     printf("\n");
 
@@ -397,6 +397,6 @@ int main() {
     }
 
     while (wait(NULL) > 0);
-    printf("\n🎮 GAME OVER 🎮\n");
+    printf("\n GAME OVER \n");
     return 0;
 }
